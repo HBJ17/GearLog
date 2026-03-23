@@ -91,29 +91,8 @@ http://127.0.0.1:5000
 * Data is appended using "ab" mode
 * Data is read using "rb" mode
 
----
 
-8. LIMITATIONS
-
-* No input validation
-* No error handling in Flask
-* Output is plain text (not formatted HTML)
-* Uses fixed-size character arrays
-* Works only on systems supporting .exe
-
----
-
-9. FUTURE IMPROVEMENTS
-
-* Add input validation
-* Improve UI design
-* Convert output to HTML format
-* Add edit and delete features
-* Replace file system with database (SQLite/MySQL)
-
----
-
-10. CONCLUSION
+9. CONCLUSION
 
 This project demonstrates integration between Python and C, along with file handling using binary files.
 It successfully implements a basic full-stack system with cross-language communication.
