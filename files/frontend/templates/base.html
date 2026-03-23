@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}MotoService{% endblock %} – Two-Wheeler Service</title>
+
+    <meta name="description" content="{% block description %}Two-Wheeler Service Management System{% endblock %}">
+
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <nav class="navbar">
+
+        <a class="brand" href="/">
+            MotoService
+        </a>
+        <ul class="nav-links">
+            <li><a href="/" {% if active_page=='dashboard' %}class="active" {% endif %}>Dashboard</a></li>
+            <li><a href="/job/add" {% if active_page=='add' %}class="active" {% endif %}>Add Job</a></li>
+            <li><a href="/jobs" {% if active_page=='jobs' %}class="active" {% endif %}>All Jobs</a></li>
+        </ul>
+    </nav>
+
+    <main class="page">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+
+</body>
+
+</html>

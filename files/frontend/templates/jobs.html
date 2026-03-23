@@ -1,0 +1,169 @@
+{# ================================================================
+jobs.html – All Job Cards Page
+Shows a searchable table of every job in jobs.txt.
+Extends base.html for the navbar and flash messages.
+================================================================ #}
+
+{% extends "base.html" %}
+{% set active_page = 'add' if action == 'add' else 'jobs' %} {# dynamically highlights correct layout #}
+
+{% block title %}All Jobs{% endblock %}
+{% block description %}View all two-wheeler service job cards{% endblock %}
+
+{% block content %}
+
+{% if action == 'add' %}
+<div class="page-header flex-between">
+    <div>
+        <h1>New Job Card</h1>
+        <p class="text-muted">Create a new service request</p>
+    </div>
+    <a href="/jobs" class="btn btn-outline">Cancel</a>
+</div>
+<div class="table-wrap" style="padding: 2rem; max-width: 600px; margin: 0 auto;">
+    <form method="POST" action="/job/add">
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Registration Number</label>
+            <input type="text" name="reg_no" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Owner Name</label>
+            <input type="text" name="owner_name" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Phone Number</label>
+            <input type="text" name="phone" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Engine Number</label>
+            <input type="text" name="engine_no" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Service Type</label>
+            <select name="service_type" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="oil">Oil Change / General Maintenance</option>
+                <option value="brake">Brake Service</option>
+                <option value="maintenance">Routine Service</option>
+                <option value="full">Full Overhaul</option>
+            </select>
+        </div>
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Expected Delivery Date</label>
+            <input type="date" name="delivery_date" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Extra Notes</label>
+            <input type="text" name="extra" placeholder="Optional notes..."
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Create Job</button>
+    </form>
+</div>
+
+{% elif action == 'update' %}
+<div class="page-header flex-between">
+    <div>
+        <h1>Update Job J-{{ job.id }}</h1>
+        <p class="text-muted">{{ job.reg_no }} – {{ job.owner_name }}</p>
+    </div>
+    <a href="/" class="btn btn-outline">Cancel</a>
+</div>
+<div class="table-wrap" style="padding: 2rem; max-width: 600px; margin: 0 auto;">
+    <form method="POST" action="/job/{{ job.id }}/update">
+        <div style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Status</label>
+            <select name="status" required
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="pending" {% if job.status=='pending' %}selected{% endif %}>Pending</option>
+                <option value="in_progress" {% if job.status=='in_progress' %}selected{% endif %}>In Progress</option>
+                <option value="completed" {% if job.status=='completed' %}selected{% endif %}>Completed</option>
+            </select>
+        </div>
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display:block; margin-bottom: 0.5rem; font-weight: 500;">Notes / Remarks</label>
+            <input type="text" name="extra" value="{{ job.extra }}"
+                style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Save Update</button>
+    </form>
+</div>
+
+{% else %}
+<div class="page-header flex-between">
+    <div>
+        <h1>All Job Cards</h1>
+        <p class="text-muted">{{ jobs|length }} job{{ 's' if jobs|length != 1 else '' }} found</p>
+    </div>
+    <a href="/job/add" class="btn btn-primary">New Job</a>
+</div>
+
+<form method="GET" action="/jobs" class="search-bar">
+
+    <input type="text" name="search" value="{{ search }}" placeholder="Search reg no, owner, engine, phone…">
+
+    <button type="submit" class="btn btn-primary">Search</button>
+
+    <a href="/jobs" class="btn btn-outline">Clear</a>
+
+</form>
+
+{% if jobs %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Job #</th>
+                <th>Reg No</th>
+                <th>Owner</th>
+                <th>Engine No</th>
+                <th>Service</th>
+                <th>Due Date</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Notes</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for j in jobs %}
+            <tr>
+                <td><strong>J-{{ j.id }}</strong></td>
+                <td><strong>{{ j.reg_no }}</strong></td>
+                <td>
+                    {{ j.owner_name }}<br>
+                    <span class="text-muted">{{ j.phone }}</span>
+                </td>
+                <td><span class="text-muted">{{ j.engine_no }}</span></td>
+                <td>{{ j.service_type | title }}</td>
+                <td>{{ j.delivery_date }}</td>
+                <td>{{ j.priority }} days</td>
+                <td>{{ j.status | replace('_', ' ') | title }}</td>
+                <td style="max-width: 160px; font-size: 0.8rem; color: var(--text-muted);">
+                    {{ j.extra if j.extra else '—' }}
+                </td>
+                <td>
+                    <a href="/job/{{ j.id }}/update" class="btn btn-outline"
+                        style="padding: 0.3rem 0.7rem; font-size: 0.78rem;">Edit</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="icon"></div>
+    <p>No jobs found. <a href="/jobs" style="color: var(--accent);">Clear search</a></p>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}

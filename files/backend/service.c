@@ -1,0 +1,298 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define MAX_JOBS   500
+#define MAX_LINE   512
+#define DATA_FILE  "../data/jobs.txt"
+#define FIELD_SIZE 128
+
+typedef struct {
+    int  id;
+    char reg_no[FIELD_SIZE];
+    char owner_name[FIELD_SIZE];
+    char phone[FIELD_SIZE];
+    char engine_no[FIELD_SIZE];
+    char service_type[FIELD_SIZE];
+    char delivery_date[FIELD_SIZE];
+    char status[FIELD_SIZE];
+    int  priority;
+    char extra[FIELD_SIZE];
+} JobCard;
+
+static void trim_newline(char *s) {
+    size_t len = strlen(s);
+    while (len > 0 && (s[len-1] == '\n' || s[len-1] == '\r')) {
+        s[--len] = '\0';
+    }
+}
+
+static void safe_copy(char *dest, const char *src, int dest_size) {
+    int i = 0;
+    while (i < dest_size - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+static int parse_line(const char *line, JobCard *j) {
+    char buf[MAX_LINE];
+    strncpy(buf, line, MAX_LINE - 1);
+    buf[MAX_LINE - 1] = '\0';
+    trim_newline(buf);
+
+    char *fields[10];
+    int   nf = 0;
+    char *p  = buf;
+
+    fields[nf++] = p;
+    while (*p && nf < 10) {
+        if (*p == '|') {
+            *p = '\0';
+            fields[nf++] = p + 1;
+        }
+        p++;
+    }
+
+    if (nf < 10) return 0; 
+
+    j->id = atoi(fields[0]);
+    safe_copy(j->reg_no,        fields[1], FIELD_SIZE);
+    safe_copy(j->owner_name,    fields[2], FIELD_SIZE);
+    safe_copy(j->phone,         fields[3], FIELD_SIZE);
+    safe_copy(j->engine_no,     fields[4], FIELD_SIZE);
+    safe_copy(j->service_type,  fields[5], FIELD_SIZE);
+    safe_copy(j->delivery_date, fields[6], FIELD_SIZE);
+    safe_copy(j->status,        fields[7], FIELD_SIZE);
+    j->priority = atoi(fields[8]);
+    safe_copy(j->extra,         fields[9], FIELD_SIZE);
+
+    return 1;
+}
+
+int fh_read_all(JobCard *jobs, int max) {
+    FILE *fp = fopen(DATA_FILE, "r");
+    if (!fp) return 0;
+
+    int count = 0;
+    char line[MAX_LINE];
+    while (count < max && fgets(line, sizeof(line), fp)) {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
+        if (parse_line(line, &jobs[count])) count++;
+    }
+    fclose(fp);
+    return count;
+}
+
+int fh_write_all(JobCard *jobs, int count) {
+    FILE *fp = fopen(DATA_FILE, "w");
+    if (!fp) return 0;
+
+    fprintf(fp, "# Two-Wheeler Service Jobs\n");
+    fprintf(fp, "# ID|RegNo|OwnerName|Phone|EngineNo|ServiceType|DeliveryDate|Status|Priority|Extra\n");
+    for (int i = 0; i < count; i++) {
+        fprintf(fp, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n",
+            jobs[i].id,
+            jobs[i].reg_no,
+            jobs[i].owner_name,
+            jobs[i].phone,
+            jobs[i].engine_no,
+            jobs[i].service_type,
+            jobs[i].delivery_date,
+            jobs[i].status,
+            jobs[i].priority,
+            jobs[i].extra);
+    }
+    fclose(fp);
+    return 1;
+}
+
+int fh_append(JobCard *j) {
+    FILE *fp = fopen(DATA_FILE, "r");
+    int has_header = 0;
+    if (fp) {
+        char line[MAX_LINE];
+        if (fgets(line, sizeof(line), fp)) has_header = (line[0] == '#');
+        fclose(fp);
+    }
+
+    fp = fopen(DATA_FILE, "a");
+    if (!fp) return 0;
+
+    if (!has_header) {
+        fprintf(fp, "# Two-Wheeler Service Jobs\n");
+        fprintf(fp, "# ID|RegNo|OwnerName|Phone|EngineNo|ServiceType|DeliveryDate|Status|Priority|Extra\n");
+    }
+
+    fprintf(fp, "%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n",
+        j->id, j->reg_no, j->owner_name, j->phone,
+        j->engine_no, j->service_type, j->delivery_date,
+        j->status, j->priority, j->extra);
+    fclose(fp);
+    return 1;
+}
+
+int fh_next_id(void) {
+    JobCard jobs[MAX_JOBS];
+    int count = fh_read_all(jobs, MAX_JOBS);
+    int max_id = 0;
+    for (int i = 0; i < count; i++) {
+        if (jobs[i].id > max_id) max_id = jobs[i].id;
+    }
+    return max_id + 1;
+}
+
+int calc_priority(const char *delivery_date) {
+    struct tm due = {0};
+    if (sscanf(delivery_date, "%d-%d-%d",
+               &due.tm_year, &due.tm_mon, &due.tm_mday) != 3) return 0;
+    due.tm_year -= 1900;
+    due.tm_mon  -= 1;
+    due.tm_isdst = -1;
+
+    time_t now   = time(NULL);
+    time_t due_t = mktime(&due);
+    double diff  = difftime(due_t, now) / 86400.0;
+    return (int)diff;  
+}
+
+int jc_add(const char *reg_no, const char *owner_name, const char *phone,
+           const char *engine_no, const char *service_type,
+           const char *delivery_date, const char *extra) {
+    JobCard j;
+    memset(&j, 0, sizeof(j));
+
+    j.id = fh_next_id();
+    strncpy(j.reg_no,        reg_no,        FIELD_SIZE - 1);
+    strncpy(j.owner_name,    owner_name,    FIELD_SIZE - 1);
+    strncpy(j.phone,         phone,         FIELD_SIZE - 1);
+    strncpy(j.engine_no,     engine_no,     FIELD_SIZE - 1);
+    strncpy(j.service_type,  service_type,  FIELD_SIZE - 1);
+    strncpy(j.delivery_date, delivery_date, FIELD_SIZE - 1);
+    strncpy(j.status,        "pending",     FIELD_SIZE - 1);
+    strncpy(j.extra,         extra && *extra ? extra : "—", FIELD_SIZE - 1);
+    j.priority = calc_priority(delivery_date);
+
+    if (!fh_append(&j)) return -1;
+    return j.id;
+}
+
+int jc_update(int id, const char *status, const char *extra) {
+    JobCard jobs[MAX_JOBS];
+    int count = fh_read_all(jobs, MAX_JOBS);
+    if (count == 0) return 0;
+
+    int found = 0;
+    for (int i = 0; i < count; i++) {
+        if (jobs[i].id == id) {
+            if (status && *status)
+                strncpy(jobs[i].status, status, FIELD_SIZE - 1);
+            if (extra && *extra)
+                strncpy(jobs[i].extra, extra, FIELD_SIZE - 1);
+            jobs[i].priority = calc_priority(jobs[i].delivery_date);
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) return 0;
+    return fh_write_all(jobs, count);
+}
+
+static int cmp_priority(const void *a, const void *b) {
+    const JobCard *ja = (const JobCard *)a;
+    const JobCard *jb = (const JobCard *)b;
+    return ja->priority - jb->priority;
+}
+
+int jc_list_all(JobCard *out, int max) {
+    int count = fh_read_all(out, max);
+    qsort(out, count, sizeof(JobCard), cmp_priority);
+    return count;
+}
+
+static void print_job_json(const JobCard *j, int last) {
+    printf("  {\n");
+    printf("    \"id\": %d,\n",            j->id);
+    printf("    \"reg_no\": \"%s\",\n",    j->reg_no);
+    printf("    \"owner_name\": \"%s\",\n",j->owner_name);
+    printf("    \"phone\": \"%s\",\n",     j->phone);
+    printf("    \"engine_no\": \"%s\",\n", j->engine_no);
+    printf("    \"service_type\": \"%s\",\n", j->service_type);
+    printf("    \"delivery_date\": \"%s\",\n",j->delivery_date);
+    printf("    \"status\": \"%s\",\n",    j->status);
+    printf("    \"priority\": %d,\n",      j->priority);
+    printf("    \"extra\": \"%s\"\n",      j->extra);
+    printf("  }%s\n", last ? "" : ",");
+}
+
+void jc_print_json(JobCard *jobs, int count) {
+    printf("[\n");
+    for (int i = 0; i < count; i++) {
+        print_job_json(&jobs[i], i == count - 1);
+    }
+    printf("]\n");
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: service.exe <command> [args]\n");
+        return 1;
+    }
+
+    const char *cmd = argv[1];
+
+    if (strcmp(cmd, "add") == 0) {
+        if (argc < 8) {
+            printf("Error: Missing arguments for add.\n");
+            return 1;
+        }
+        const char *reg_no = argv[2];
+        const char *owner_name = argv[3];
+        const char *phone = argv[4];
+        const char *engine_no = argv[5];
+        const char *service_type = argv[6];
+        const char *delivery_date = argv[7];
+        const char *extra = (argc >= 9) ? argv[8] : "";
+        
+        int id = jc_add(reg_no, owner_name, phone, engine_no, service_type, delivery_date, extra);
+        if (id > 0) {
+            printf("Added job %d successfully.\n", id);
+            return 0;
+        } else {
+            printf("Failed to add job.\n");
+            return 1;
+        }
+    } 
+    else if (strcmp(cmd, "update") == 0) {
+        if (argc < 4) {
+            printf("Error: Missing arguments for update.\n");
+            return 1;
+        }
+        int id = atoi(argv[2]);
+        const char *status = argv[3];
+        const char *extra = (argc >= 5) ? argv[4] : "";
+        
+        if (jc_update(id, status, extra)) {
+            printf("Updated job %d successfully.\n", id);
+            return 0;
+        } else {
+            printf("Failed to update job %d.\n", id);
+            return 1;
+        }
+    }
+    else if (strcmp(cmd, "list") == 0) {
+        JobCard jobs[MAX_JOBS];
+        int count = jc_list_all(jobs, MAX_JOBS);
+        jc_print_json(jobs, count);
+        return 0;
+    }
+    else {
+        printf("Unknown command: %s\n", cmd);
+        return 1;
+    }
+
+    return 0;
+}

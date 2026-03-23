@@ -1,0 +1,171 @@
+{# ================================================================
+index.html – Dashboard Page
+Shows summary stats and all active jobs in priority order.
+Extends base.html (navbar + flash messages included automatically).
+================================================================ #}
+
+{% extends "base.html" %}
+{% set active_page = 'dashboard' %} {# highlights "Dashboard" in the navbar #}
+
+{% block title %}Dashboard{% endblock %}
+{% block description %}Service shop dashboard – active jobs by priority{% endblock %}
+
+{% block content %}
+
+<div class="page-header flex-between">
+    <div>
+        <h1>Service Dashboard</h1>
+        <p class="text-muted" id="today-label"></p>
+    </div>
+    <a href="/job/add" class="btn btn-primary">New Job Card</a>
+</div>
+
+
+<div class="stats-grid">
+
+    <div class="stat-card blue">
+        <div class="stat-icon"></div>
+        <div class="stat-label">Total Jobs</div>
+        <div class="stat-value">{{ stats.total }}</div>
+    </div>
+
+    <div class="stat-card orange">
+        <div class="stat-icon"></div>
+        <div class="stat-label">Pending</div>
+        <div class="stat-value">{{ stats.pending }}</div>
+    </div>
+
+    <div class="stat-card blue">
+        <div class="stat-icon"></div>
+        <div class="stat-label">In Progress</div>
+        <div class="stat-value">{{ stats.in_progress }}</div>
+    </div>
+
+    <div class="stat-card green">
+        <div class="stat-icon"></div>
+        <div class="stat-label">Completed</div>
+        <div class="stat-value">{{ stats.completed }}</div>
+    </div>
+
+    <div class="stat-card red">
+        <div class="stat-icon"></div>
+        <div class="stat-label">Overdue</div>
+        <div class="stat-value">{{ stats.overdue }}</div>
+    </div>
+
+</div>
+
+<div class="section-header">
+    <h2 class="section-title">Active Jobs — Priority Order
+        <span class="text-muted" style="font-weight: 400; font-size: 0.82rem;">
+            ({{ active|length }} job{{ 's' if active|length != 1 else '' }})
+        </span>
+    </h2>
+    <a href="/" class="btn btn-outline">Refresh</a>
+</div>
+
+{% if active %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Job #</th>
+                <th>Reg No</th>
+                <th>Owner</th>
+                <th>Service</th>
+                <th>Due Date</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for j in active %}
+            <tr>
+                <td><strong>J-{{ j.id }}</strong></td>
+                <td><strong>{{ j.reg_no }}</strong></td>
+                <td>{{ j.owner_name }}<br><span class="text-muted">{{ j.phone }}</span></td>
+                <td>{{ j.service_type | title }}</td>
+                <td>{{ j.delivery_date }}</td>
+                <td>{{ j.priority }} days</td>
+                <td>{{ j.status | replace('_', ' ') | title }}</td>
+                <td>
+                    <a href="/job/{{ j.id }}/update" class="btn btn-outline"
+                        style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">Edit</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="icon"></div>
+    <p>No active jobs. All caught up!</p>
+</div>
+{% endif %}
+
+<div class="section-header" style="margin-top: 3rem;">
+    <h2 class="section-title">History — Completed Jobs
+        <span class="text-muted" style="font-weight: 400; font-size: 0.82rem;">
+            ({{ history|length }} job{{ 's' if history|length != 1 else '' }})
+        </span>
+    </h2>
+</div>
+
+{% if history %}
+<div class="table-wrap" style="opacity: 0.8;">
+    <table>
+        <thead>
+            <tr>
+                <th>Job #</th>
+                <th>Reg No</th>
+                <th>Owner</th>
+                <th>Service</th>
+                <th>Completed On</th>
+                <th>Notes / Remarks</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for j in history %}
+            <tr>
+                <td><strong>J-{{ j.id }}</strong></td>
+                <td><strong>{{ j.reg_no }}</strong></td>
+                <td>{{ j.owner_name }}<br><span class="text-muted">{{ j.phone }}</span></td>
+                <td>{{ j.service_type | title }}</td>
+                <td>{{ j.delivery_date }}</td>
+                <td style="max-width: 200px; font-size: 0.85rem; color: var(--text-muted);">
+                    {{ j.extra if j.extra else '—' }}
+                </td>
+                <td>
+                    <a href="/job/{{ j.id }}/update" class="btn btn-outline"
+                        style="padding: 0.3rem 0.7rem; font-size: 0.8rem;">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="icon"></div>
+    <p>No completed jobs yet.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById("today-label").textContent =
+        new Date().toLocaleDateString("en-IN", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+        });
+</script>
+{% endblock %}
