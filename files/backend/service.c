@@ -201,40 +201,7 @@ int jc_update(int id, const char *status, const char *extra) {
     return fh_write_all(jobs, count);
 }
 
-static int cmp_priority(const void *a, const void *b) {
-    const JobCard *ja = (const JobCard *)a;
-    const JobCard *jb = (const JobCard *)b;
-    return ja->priority - jb->priority;
-}
 
-int jc_list_all(JobCard *out, int max) {
-    int count = fh_read_all(out, max);
-    qsort(out, count, sizeof(JobCard), cmp_priority);
-    return count;
-}
-
-static void print_job_json(const JobCard *j, int last) {
-    printf("  {\n");
-    printf("    \"id\": %d,\n",            j->id);
-    printf("    \"reg_no\": \"%s\",\n",    j->reg_no);
-    printf("    \"owner_name\": \"%s\",\n",j->owner_name);
-    printf("    \"phone\": \"%s\",\n",     j->phone);
-    printf("    \"engine_no\": \"%s\",\n", j->engine_no);
-    printf("    \"service_type\": \"%s\",\n", j->service_type);
-    printf("    \"delivery_date\": \"%s\",\n",j->delivery_date);
-    printf("    \"status\": \"%s\",\n",    j->status);
-    printf("    \"priority\": %d,\n",      j->priority);
-    printf("    \"extra\": \"%s\"\n",      j->extra);
-    printf("  }%s\n", last ? "" : ",");
-}
-
-void jc_print_json(JobCard *jobs, int count) {
-    printf("[\n");
-    for (int i = 0; i < count; i++) {
-        print_job_json(&jobs[i], i == count - 1);
-    }
-    printf("]\n");
-}
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -283,12 +250,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-    else if (strcmp(cmd, "list") == 0) {
-        JobCard jobs[MAX_JOBS];
-        int count = jc_list_all(jobs, MAX_JOBS);
-        jc_print_json(jobs, count);
-        return 0;
-    }
+
     else {
         printf("Unknown command: %s\n", cmd);
         return 1;

@@ -58,10 +58,6 @@ body {
 }
 
 
-.navbar .brand span.accent {
-  color: var(--accent);
-}
-
 .nav-links {
   display: flex;
   gap: 0.25rem;
@@ -203,53 +199,6 @@ tbody td {
   vertical-align: middle;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 100px;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.badge-pending {
-  background: #fef3c7;
-  color: #92400e;
-  border: 1px solid #fcd34d;
-}
-
-.badge-in_progress {
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
-}
-
-.badge-completed {
-  background: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
-}
-
-.badge-overdue {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
-}
-
-.priority-high {
-  color: var(--red);
-  font-weight: 700;
-}
-
-.priority-medium {
-  color: var(--orange);
-  font-weight: 600;
-}
-
-.priority-low {
-  color: var(--green);
-}
 
 .btn {
   display: inline-flex;
@@ -272,15 +221,6 @@ tbody td {
 
 .btn-primary:hover {
   background: var(--accent-dark);
-}
-
-.btn-success {
-  background: var(--green);
-  color: #fff;
-}
-
-.btn-success:hover {
-  background: #15803d;
 }
 
 .btn-outline {
@@ -356,15 +296,6 @@ textarea {
   min-height: 80px;
 }
 
-.form-actions {
-  display: flex;
-  gap: 0.65rem;
-  justify-content: flex-end;
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--border);
-}
-
 .section-header {
   display: flex;
   align-items: center;
@@ -396,40 +327,6 @@ textarea {
 }
 
 
-.flash-wrap {
-  max-width: 1200px;
-  margin: 1rem auto 0;
-  padding: 0 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.flash {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.5;
-}
-
-.flash-success {
-  background: #f0fdf4;
-  border: 1px solid #86efac;
-  color: #166534;
-}
-
-
-.flash-error {
-  background: #fef2f2;
-  border: 1px solid #fca5a5;
-  color: #991b1b;
-}
-
-
 .empty-state {
   text-align: center;
   padding: 3.5rem 2rem;
@@ -441,33 +338,6 @@ textarea {
 
 .empty-state p {
   font-size: 0.95rem;
-}
-
-
-input[readonly] {
-  background: #f9fafb;
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-
-
-.flex-between {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.mb-1 {
-  margin-bottom: 0.5rem;
-}
-
-.mb-2 {
-  margin-bottom: 1rem;
-}
-
-.mb-3 {
-  margin-bottom: 1.5rem;
 }
 
 .text-muted {
