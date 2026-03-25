@@ -144,10 +144,13 @@ def update_job(job_id):
             flash(f"Error updating job: {msg}", "error")
             
     return render_template("jobs.html", action="update", job=job)
+
+    
 @app.route("/jobs")
 def list_jobs():
     jobs   = parse_jobs()
     search = request.args.get("search", "").strip().lower()
+    status_filter = request.args.get("status_filter", "").strip().lower()
 
     if search:
         jobs = [j for j in jobs if any(
@@ -155,7 +158,10 @@ def list_jobs():
             for field in ("reg_no", "owner_name", "engine_no", "phone")
         )]
 
-    return render_template("jobs.html", jobs=jobs, search=search)
+    if status_filter:
+        jobs = [j for j in jobs if j["status"].lower() == status_filter]
+
+    return render_template("jobs.html", jobs=jobs, search=search, status_filter=status_filter)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

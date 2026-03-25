@@ -92,6 +92,13 @@
 
     <input type="text" name="search" value="{{ search }}" placeholder="Search reg no, owner, engine, phone…">
 
+    <select name="status_filter">
+        <option value="">All Works</option>
+        <option value="pending" {% if status_filter=='pending' %}selected{% endif %}>Pending</option>
+        <option value="in_progress" {% if status_filter=='in_progress' %}selected{% endif %}>In Progress</option>
+        <option value="completed" {% if status_filter=='completed' %}selected{% endif %}>Completed</option>
+    </select>
+
     <button type="submit" class="btn btn-primary">Search</button>
 
     <a href="/jobs" class="btn btn-outline">Clear</a>
