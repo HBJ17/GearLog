@@ -1,15 +1,18 @@
+# --- Imports ---
 import subprocess
 import os
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_cors import CORS
 import datetime as _dt
 
+# --- Config: paths ---
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 TMPL_DIR    = os.path.join(BASE_DIR, "..", "frontend", "templates")
 STATIC_DIR  = os.path.join(BASE_DIR, "..", "frontend")
 BACKEND_DIR = os.path.join(BASE_DIR, "..", "backend")
 DATA_FILE   = os.path.join(BASE_DIR, "..", "data", "jobs.txt")
 
+# --- App init ---
 app = Flask(
     __name__,
     template_folder=TMPL_DIR,
@@ -20,6 +23,7 @@ app.secret_key = "super_secret_moto_key"
 CORS(app)
 
 
+# --- Helper: read and sort jobs from jobs.txt ---
 def parse_jobs():
     today = _dt.date.today()
     jobs  = []
@@ -61,6 +65,7 @@ def parse_jobs():
     return sorted(jobs, key=lambda j: j["priority"])
 
 
+# --- Helper: call service.exe subprocess ---
 def run_exe(exe_name, *args):
     try:
         exe_path = os.path.join(BACKEND_DIR, exe_name)
@@ -83,6 +88,7 @@ def run_exe(exe_name, *args):
         return False, str(e)
 
 
+# --- Route: mechanic dashboard ---
 @app.route("/")
 def dashboard():
     jobs = parse_jobs()
@@ -101,6 +107,7 @@ def dashboard():
 
     return render_template("index.html", stats=stats, active=active, history=history)
 
+# --- Route: add new job card ---
 @app.route("/job/add", methods=["GET", "POST"])
 def add_job():
     if request.method == "POST":
@@ -122,6 +129,7 @@ def add_job():
 
     return render_template("jobs.html", action="add")
 
+# --- Route: update existing job card ---
 @app.route("/job/<int:job_id>/update", methods=["GET", "POST"])
 def update_job(job_id):
     jobs = parse_jobs()
@@ -144,6 +152,7 @@ def update_job(job_id):
     return render_template("jobs.html", action="update", job=job)
 
 
+# --- Route: job list with search and status filter ---
 @app.route("/jobs")
 def list_jobs():
     jobs          = parse_jobs()
@@ -161,10 +170,12 @@ def list_jobs():
 
     return render_template("jobs.html", jobs=jobs, search=search, status_filter=status_filter)
 
+# --- Route: customer portal landing ---
 @app.route("/user")
 def user_dashboard():
     return render_template("user_search.html")
 
+# --- Route: customer job search by phone or reg_no ---
 @app.route("/user/search", methods=["GET"])
 def user_search_results():
     query = request.args.get("query", "").strip().lower()
@@ -180,5 +191,6 @@ def user_search_results():
 
     return render_template("user_view.html", query=query, active=active_jobs, history=history_jobs)
 
+# --- Entry point ---
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

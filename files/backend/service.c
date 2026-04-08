@@ -9,6 +9,7 @@
 #define UNDO_FILE   "../data/undo.txt"
 #define FIELD_SIZE  128
 
+/* --- JobCard struct --- */
 typedef struct {
     int  id;
     char reg_no[FIELD_SIZE];
@@ -22,6 +23,7 @@ typedef struct {
     char extra[FIELD_SIZE];
 } JobCard;
 
+/* --- Singly Linked List: per-vehicle history --- */
 typedef struct HistoryNode {
     JobCard            job;
     struct HistoryNode *next;
@@ -34,6 +36,7 @@ typedef struct VehicleList {
     struct VehicleList *next;
 } VehicleList;
 
+/* vl_find_or_create: find or insert a vehicle node */
 static VehicleList *vl_find_or_create(VehicleList **root, const char *reg_no) {
     VehicleList *v = *root;
     while (v) {
@@ -50,6 +53,7 @@ static VehicleList *vl_find_or_create(VehicleList **root, const char *reg_no) {
     return v;
 }
 
+/* vl_append: insert job at tail of vehicle list */
 static void vl_append(VehicleList *v, const JobCard *j) {
     HistoryNode *node = (HistoryNode *)malloc(sizeof(HistoryNode));
     if (!node) return;
@@ -63,6 +67,7 @@ static void vl_append(VehicleList *v, const JobCard *j) {
     }
 }
 
+/* build_vehicle_lists: build all vehicle lists from flat job array */
 static VehicleList *build_vehicle_lists(JobCard *jobs, int count) {
     VehicleList *root = NULL;
     for (int i = 0; i < count; i++) {
@@ -72,6 +77,7 @@ static VehicleList *build_vehicle_lists(JobCard *jobs, int count) {
     return root;
 }
 
+/* free_vehicle_lists: release all vehicle list memory */
 static void free_vehicle_lists(VehicleList *root) {
     while (root) {
         HistoryNode *h = root->head;
@@ -86,6 +92,7 @@ static void free_vehicle_lists(VehicleList *root) {
     }
 }
 
+/* --- Stack: undo last action (persisted in undo.txt) --- */
 typedef struct StackNode {
     int  job_id;
     char field[32];
@@ -93,6 +100,7 @@ typedef struct StackNode {
     struct StackNode *next;
 } StackNode;
 
+/* stack_push: push an undo entry onto the stack */
 static void stack_push(StackNode **top, int job_id,
                        const char *field, const char *old_value) {
     StackNode *node = (StackNode *)malloc(sizeof(StackNode));
@@ -106,6 +114,7 @@ static void stack_push(StackNode **top, int job_id,
     *top       = node;
 }
 
+/* stack_pop: pop the top undo entry */
 static int stack_pop(StackNode **top, int *out_id,
                      char *out_field, char *out_value) {
     if (!*top) return 0;
@@ -120,11 +129,13 @@ static int stack_pop(StackNode **top, int *out_id,
     return 1;
 }
 
+/* stack_free: free all stack nodes */
 static void stack_free(StackNode **top) {
     int id; char f[32], v[FIELD_SIZE];
     while (stack_pop(top, &id, f, v));
 }
 
+/* stack_save: write stack to undo.txt (bottom-first) */
 static void stack_save(StackNode *top) {
     StackNode *arr[MAX_JOBS];
     int n = 0;
@@ -137,6 +148,7 @@ static void stack_save(StackNode *top) {
     fclose(fp);
 }
 
+/* stack_load: read undo.txt into in-memory stack */
 static StackNode *stack_load(void) {
     FILE *fp = fopen(UNDO_FILE, "r");
     if (!fp) return NULL;
@@ -159,6 +171,7 @@ static StackNode *stack_load(void) {
     return top;
 }
 
+/* --- Queue: FIFO job processing per service_type --- */
 typedef struct QueueNode {
     int job_id;
     struct QueueNode *next;
@@ -171,6 +184,7 @@ typedef struct Queue {
     struct Queue *next;
 } Queue;
 
+/* queue_find_or_create: find or create queue for a service type */
 static Queue *queue_find_or_create(Queue **root, const char *stype) {
     Queue *q = *root;
     while (q) {
@@ -187,6 +201,7 @@ static Queue *queue_find_or_create(Queue **root, const char *stype) {
     return q;
 }
 
+/* enqueue: add job_id to the rear of its service_type queue */
 static void enqueue(Queue **root, const char *stype, int job_id) {
     Queue *q = queue_find_or_create(root, stype);
     if (!q) return;
@@ -202,6 +217,7 @@ static void enqueue(Queue **root, const char *stype, int job_id) {
     }
 }
 
+/* dequeue: remove and return front job_id for a service type */
 static int dequeue(Queue **root, const char *stype) {
     Queue *q = *root;
     while (q) {
@@ -217,6 +233,7 @@ static int dequeue(Queue **root, const char *stype) {
     return id;
 }
 
+/* build_queues: enqueue all non-completed jobs in file order */
 static Queue *build_queues(JobCard *jobs, int count) {
     Queue *root = NULL;
     for (int i = 0; i < count; i++) {
@@ -226,6 +243,7 @@ static Queue *build_queues(JobCard *jobs, int count) {
     return root;
 }
 
+/* free_queues: release all queue memory */
 static void free_queues(Queue *root) {
     while (root) {
         QueueNode *n = root->front;
@@ -236,6 +254,7 @@ static void free_queues(Queue *root) {
     }
 }
 
+/* --- Insertion Sort: sort jobs array by priority ascending --- */
 static void insertion_sort(JobCard *jobs, int count) {
     for (int i = 1; i < count; i++) {
         JobCard key = jobs[i];
@@ -248,6 +267,7 @@ static void insertion_sort(JobCard *jobs, int count) {
     }
 }
 
+/* --- Linear Search: search across a named field --- */
 static const char *job_field(const JobCard *j, const char *field) {
     if (strcmp(field, "reg_no")     == 0) return j->reg_no;
     if (strcmp(field, "owner_name") == 0) return j->owner_name;
@@ -281,6 +301,7 @@ static void linear_search_all(const JobCard *jobs, int count,
     if (!found) printf("No jobs found matching %s = '%s'\n", field, query);
 }
 
+/* --- Binary Search: fast job lookup by ID --- */
 static int cmp_by_id(const void *a, const void *b) {
     return ((JobCard *)a)->id - ((JobCard *)b)->id;
 }
@@ -299,6 +320,7 @@ static int binary_search_by_id(JobCard *jobs, int count, int target_id,
     return -1;
 }
 
+/* --- Utility helpers --- */
 static void trim_newline(char *s) {
     size_t len = strlen(s);
     while (len > 0 && (s[len-1] == '\n' || s[len-1] == '\r'))
@@ -341,6 +363,7 @@ static int parse_line(const char *line, JobCard *j) {
     return 1;
 }
 
+/* --- File Handlers --- */
 int fh_read_all(JobCard *jobs, int max) {
     FILE *fp = fopen(DATA_FILE, "r");
     if (!fp) return 0;
@@ -414,6 +437,7 @@ int calc_priority(const char *delivery_date) {
     return (int)diff;
 }
 
+/* --- Public API --- */
 int jc_add(const char *reg_no, const char *owner_name, const char *phone,
            const char *engine_no, const char *service_type,
            const char *delivery_date, const char *extra) {
@@ -480,6 +504,7 @@ int jc_update(int id, const char *status, const char *extra) {
     return fh_write_all(jobs, count);
 }
 
+/* jc_undo: revert last add or update from undo.txt */
 static int jc_undo(void) {
     StackNode *undo_stack = stack_load();
     if (!undo_stack) {
@@ -530,6 +555,7 @@ static int jc_undo(void) {
     return 1;
 }
 
+/* jc_next_job: dequeue and print next pending job for a service type */
 static void jc_next_job(const char *stype) {
     JobCard jobs[MAX_JOBS];
     int count = fh_read_all(jobs, MAX_JOBS);
@@ -542,6 +568,7 @@ static void jc_next_job(const char *stype) {
         printf("Next job for '%s': ID %d\n", stype, next_id);
 }
 
+/* --- main: CLI entry point --- */
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("Usage: service.exe <command> [args]\n");
