@@ -163,5 +163,25 @@ def list_jobs():
 
     return render_template("jobs.html", jobs=jobs, search=search, status_filter=status_filter)
 
+@app.route("/user")
+def user_dashboard():
+    return render_template("user_search.html")
+
+@app.route("/user/search", methods=["GET"])
+def user_search_results():
+    query = request.args.get("query", "").strip().lower()
+    if not query:
+        return redirect(url_for("user_dashboard"))
+
+    jobs = parse_jobs()
+    
+    # Filter jobs matching phone or reg_no partially
+    matching_jobs = [j for j in jobs if query in j["phone"].lower() or query in j["reg_no"].lower()]
+    
+    active_jobs = [j for j in matching_jobs if j["status"] != "completed"]
+    history_jobs = [j for j in matching_jobs if j["status"] == "completed"]
+    
+    return render_template("user_view.html", query=query, active=active_jobs, history=history_jobs)
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
