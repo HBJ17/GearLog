@@ -204,6 +204,68 @@ int jc_update(int id, const char *status, const char *extra) {
 
 
 int main(int argc, char *argv[]) {
+    if (argc >= 2 && strcmp(argv[1], "daemon") == 0) {
+        JobCard mem_jobs[MAX_JOBS];
+        int mem_count = fh_read_all(mem_jobs, MAX_JOBS);
+        char line[MAX_LINE];
+        
+        while (fgets(line, sizeof(line), stdin)) {
+            trim_newline(line);
+            if (strcmp(line, "EXIT") == 0) {
+                fh_write_all(mem_jobs, mem_count);
+                break;
+            } else if (strncmp(line, "ADD|", 4) == 0) {
+                char *p = line + 4;
+                char *fields[10];
+                int nf = 0; fields[nf++] = p;
+                while (*p && nf < 10) {
+                    if (*p == '|') { *p = '\0'; fields[nf++] = p + 1; }
+                    p++;
+                }
+                if (nf >= 6) { 
+                    JobCard j; memset(&j, 0, sizeof(j));
+                    int max_id = 0;
+                    for (int i=0; i<mem_count; i++) if (mem_jobs[i].id > max_id) max_id = mem_jobs[i].id;
+                    j.id = max_id + 1;
+                    safe_copy(j.reg_no, fields[0], FIELD_SIZE);
+                    safe_copy(j.owner_name, fields[1], FIELD_SIZE);
+                    safe_copy(j.phone, fields[2], FIELD_SIZE);
+                    safe_copy(j.engine_no, fields[3], FIELD_SIZE);
+                    safe_copy(j.service_type, fields[4], FIELD_SIZE);
+                    safe_copy(j.delivery_date, fields[5], FIELD_SIZE);
+                    safe_copy(j.status, "pending", FIELD_SIZE);
+                    safe_copy(j.extra, (nf >= 7 && *fields[6]) ? fields[6] : "\xE2\x80\x94", FIELD_SIZE); // Em-dash or "\xE2\x80\x94"
+                    j.priority = calc_priority(j.delivery_date);
+                    if (mem_count < MAX_JOBS) { mem_jobs[mem_count++] = j; printf("Added job %d successfully.\n", j.id); } else printf("Error: limit reached.\n");
+                } else printf("Error: invalid add args.\n");
+                fflush(stdout);
+            } else if (strncmp(line, "UPDATE|", 7) == 0) {
+                char *p = line + 7; char *fields[3]; int nf = 0; fields[nf++] = p;
+                while (*p && nf < 3) { if (*p == '|') { *p = '\0'; fields[nf++] = p + 1; } p++; }
+                if (nf >= 2) {
+                    int id = atoi(fields[0]); char *status = fields[1]; char *extra = (nf >= 3) ? fields[2] : "";
+                    int found = 0;
+                    for (int i=0; i<mem_count; i++) {
+                        if (mem_jobs[i].id == id) {
+                            if (status && *status) safe_copy(mem_jobs[i].status, status, FIELD_SIZE);
+                            if (extra && *extra) safe_copy(mem_jobs[i].extra, extra, FIELD_SIZE);
+                            mem_jobs[i].priority = calc_priority(mem_jobs[i].delivery_date);
+                            found = 1; break;
+                        }
+                    }
+                    if (found) printf("Updated job %d successfully.\n", id); else printf("Error: id not found.\n");
+                } else printf("Error: invalid update args.\n");
+                fflush(stdout);
+            } else if (strcmp(line, "GET_ALL") == 0) {
+                for (int i=0; i<mem_count; i++) {
+                    printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", mem_jobs[i].id, mem_jobs[i].reg_no, mem_jobs[i].owner_name, mem_jobs[i].phone, mem_jobs[i].engine_no, mem_jobs[i].service_type, mem_jobs[i].delivery_date, mem_jobs[i].status, mem_jobs[i].priority, mem_jobs[i].extra);
+                }
+                printf("END_GET_ALL\n"); fflush(stdout);
+            } else { printf("Unknown command\n"); fflush(stdout); }
+        }
+        return 0;
+    }
+
     if (argc < 2) {
         printf("Usage: service.exe <command> [args]\n");
         return 1;

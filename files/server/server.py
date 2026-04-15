@@ -1,5 +1,7 @@
 import subprocess  
 import os          
+import threading
+import atexit
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_cors import CORS
 import datetime as _dt
@@ -9,6 +11,62 @@ TMPL_DIR    = os.path.join(BASE_DIR, "..", "frontend", "templates")
 STATIC_DIR  = os.path.join(BASE_DIR, "..", "frontend")             
 BACKEND_DIR = os.path.join(BASE_DIR, "..", "backend")               
 DATA_FILE   = os.path.join(BASE_DIR, "..", "data", "jobs.txt") 
+
+backend_proc = None
+backend_lock = threading.Lock()
+
+def init_backend():
+    global backend_proc
+    exe_path = os.path.join(BACKEND_DIR, "service.exe")
+    if not os.path.exists(exe_path) and os.path.exists(os.path.join(BACKEND_DIR, "service")):
+        exe_path = os.path.join(BACKEND_DIR, "service")
+    try:
+        backend_proc = subprocess.Popen(
+            [exe_path, "daemon"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,           
+            cwd=BACKEND_DIR       
+        )
+    except FileNotFoundError:
+        pass
+
+def close_backend():
+    global backend_proc
+    if backend_proc:
+        try:
+            backend_proc.stdin.write("EXIT\n")
+            backend_proc.stdin.flush()
+            backend_proc.wait(timeout=2)
+        except:
+            pass
+
+init_backend()
+atexit.register(close_backend)
+
+def send_command(cmd_str):
+    global backend_proc
+    if not backend_proc or backend_proc.poll() is not None:
+        init_backend()
+        
+    with backend_lock:
+        if not backend_proc: return False, "Backend not running"
+        try:
+            backend_proc.stdin.write(cmd_str + "\n")
+            backend_proc.stdin.flush()
+            if cmd_str == "GET_ALL":
+                lines = []
+                while True:
+                    line = backend_proc.stdout.readline()
+                    if not line or line.strip() == "END_GET_ALL":
+                        break
+                    lines.append(line)
+                return True, lines
+            else:
+                out = backend_proc.stdout.readline().strip()
+                return "successfully" in out.lower(), out
+        except Exception as e:
+            return False, str(e)
 
 
 app = Flask(
@@ -25,64 +83,42 @@ CORS(app)
 def parse_jobs():
     today = _dt.date.today()  
     jobs  = []
-    try:
-        with open(DATA_FILE, "r") as fh:
-            for line in fh:
-                line = line.strip()
+    
+    ok, lines = send_command("GET_ALL")
+    if not ok:
+        return []
+    
+    for line in lines:
+        line = line.strip()
 
-                if not line or line.startswith("#"):
-                    continue
+        if not line or line.startswith("#"):
+            continue
 
-                parts = line.split("|")
+        parts = line.split("|")
 
-                if len(parts) < 10:
-                    continue
+        if len(parts) < 10:
+            continue
 
-                try:
-                    due = _dt.date.fromisoformat(parts[6]) 
-                    priority = (due - today).days
-                except ValueError:
-                    priority = int(parts[8])  
+        try:
+            due = _dt.date.fromisoformat(parts[6]) 
+            priority = (due - today).days
+        except ValueError:
+            priority = int(parts[8])  
 
-                jobs.append({
-                    "id":            int(parts[0]),  # unique job number
-                    "reg_no":        parts[1],       # vehicle registration number
-                    "owner_name":    parts[2],       # owner's full name
-                    "phone":         parts[3],       # owner's phone number
-                    "engine_no":     parts[4],       # engine number
-                    "service_type":  parts[5],       # oil / brake / maintenance / full
-                    "delivery_date": parts[6],       # expected delivery date (YYYY-MM-DD)
-                    "status":        parts[7],       # pending / in_progress / completed
-                    "priority":      priority,       # live days until due (negative = overdue)
-                    "extra":         parts[9],       # optional notes
-                })
-
-    except FileNotFoundError:
-        pass
+        jobs.append({
+            "id":            int(parts[0]),  # unique job number
+            "reg_no":        parts[1],       # vehicle registration number
+            "owner_name":    parts[2],       # owner's full name
+            "phone":         parts[3],       # owner's phone number
+            "engine_no":     parts[4],       # engine number
+            "service_type":  parts[5],       # oil / brake / maintenance / full
+            "delivery_date": parts[6],       # expected delivery date (YYYY-MM-DD)
+            "status":        parts[7],       # pending / in_progress / completed
+            "priority":      priority,       # live days until due (negative = overdue)
+            "extra":         parts[9],       # optional notes
+        })
 
     return sorted(jobs, key=lambda j: j["priority"])
-
-
-def run_exe(exe_name, *args):
-    try:
-        exe_path = os.path.join(BACKEND_DIR, exe_name)
-        result = subprocess.run(
-            [exe_path] + [str(a) for a in args], 
-            capture_output=True, 
-            text=True,           
-            timeout=10,       
-            cwd=BACKEND_DIR       
-        )
-
-        output = (result.stdout + result.stderr).strip()
-        return result.returncode == 0, output
-
-    except FileNotFoundError:
-        return False, f"{exe_name} not found at: {exe_path}"
-    except subprocess.TimeoutExpired:
-        return False, f"{exe_name} timed out (took too long)"
-    except Exception as e:
-        return False, str(e)
 
 
 @app.route("/")
@@ -114,7 +150,8 @@ def add_job():
         delivery = request.form.get("delivery_date", "").strip()
         extra = request.form.get("extra", "").strip()
         
-        ok, msg = run_exe("service.exe", "add", reg_no, owner, phone, engine, service, delivery, extra)
+        cmd = f"ADD|{reg_no}|{owner}|{phone}|{engine}|{service}|{delivery}|{extra}"
+        ok, msg = send_command(cmd)
         if ok:
             flash("Job added successfully!", "success")
             return redirect(url_for("dashboard"))
@@ -136,7 +173,8 @@ def update_job(job_id):
         status = request.form.get("status", "").strip()
         extra = request.form.get("extra", "").strip()
         
-        ok, msg = run_exe("service.exe", "update", job_id, status, extra)
+        cmd = f"UPDATE|{job_id}|{status}|{extra}"
+        ok, msg = send_command(cmd)
         if ok:
             flash(f"Job J-{job_id} updated successfully!", "success")
             return redirect(url_for("dashboard"))
