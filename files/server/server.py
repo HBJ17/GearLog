@@ -54,11 +54,12 @@ def send_command(cmd_str):
         try:
             backend_proc.stdin.write(cmd_str + "\n")
             backend_proc.stdin.flush()
-            if cmd_str == "GET_ALL":
+            if cmd_str == "GET_ALL" or cmd_str.startswith("SEARCH|"):
                 lines = []
+                end_marker = "END_GET_ALL" if cmd_str == "GET_ALL" else "END_SEARCH"
                 while True:
                     line = backend_proc.stdout.readline()
-                    if not line or line.strip() == "END_GET_ALL":
+                    if not line or line.strip() == end_marker:
                         break
                     lines.append(line)
                 return True, lines
@@ -80,11 +81,11 @@ CORS(app)
 
 
 
-def parse_jobs():
+def parse_jobs(cmd="GET_ALL"):
     today = _dt.date.today()  
     jobs  = []
     
-    ok, lines = send_command("GET_ALL")
+    ok, lines = send_command(cmd)
     if not ok:
         return []
     
@@ -186,15 +187,13 @@ def update_job(job_id):
     
 @app.route("/jobs")
 def list_jobs():
-    jobs   = parse_jobs()
     search = request.args.get("search", "").strip().lower()
     status_filter = request.args.get("status_filter", "").strip().lower()
 
     if search:
-        jobs = [j for j in jobs if any(
-            search in j[field].lower()
-            for field in ("reg_no", "owner_name", "engine_no", "phone")
-        )]
+        jobs = parse_jobs(f"SEARCH|{search}")
+    else:
+        jobs = parse_jobs()
 
     if status_filter:
         jobs = [j for j in jobs if j["status"].lower() == status_filter]
@@ -211,10 +210,8 @@ def user_search_results():
     if not query:
         return redirect(url_for("user_dashboard"))
 
-    jobs = parse_jobs()
-    
-    # Filter jobs matching phone or reg_no partially
-    matching_jobs = [j for j in jobs if query in j["phone"].lower() or query in j["reg_no"].lower()]
+    # Use the C backend Suffix Tree for substring searches
+    matching_jobs = parse_jobs(f"SEARCH|{query}")
     
     active_jobs = [j for j in matching_jobs if j["status"] != "completed"]
     history_jobs = [j for j in matching_jobs if j["status"] == "completed"]

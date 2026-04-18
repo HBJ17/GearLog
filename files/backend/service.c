@@ -21,6 +21,81 @@ typedef struct {
     char extra[FIELD_SIZE];
 } JobCard;
 
+#include <ctype.h>
+
+void str_tolower(const char* src, char* dest) {
+    int i = 0;
+    while(src[i]) {
+        dest[i] = tolower((unsigned char)src[i]);
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+// College-level naive Suffix Trie structure
+typedef struct SuffixNode {
+    struct SuffixNode* children[256];
+    int job_ids[MAX_JOBS];
+    int job_count;
+} SuffixNode;
+
+SuffixNode* suffix_root = NULL;
+
+SuffixNode* create_node() {
+    SuffixNode* node = (SuffixNode*)malloc(sizeof(SuffixNode));
+    node->job_count = 0;
+    for(int i=0; i<256; i++) node->children[i] = NULL;
+    return node;
+}
+
+void free_tree(SuffixNode* node) {
+    if (!node) return;
+    for(int i=0; i<256; i++) {
+        if (node->children[i]) free_tree(node->children[i]);
+    }
+    free(node);
+}
+
+void add_job_id(SuffixNode* node, int job_id) {
+    for (int i = 0; i < node->job_count; i++) {
+        if (node->job_ids[i] == job_id) return;
+    }
+    if (node->job_count < MAX_JOBS) {
+        node->job_ids[node->job_count++] = job_id;
+    }
+}
+
+void insert_suffix(const char* text, int job_id) {
+    SuffixNode* curr = suffix_root;
+    for (int i = 0; text[i] != '\0'; i++) {
+        unsigned char c = (unsigned char)text[i];
+        if (curr->children[c] == NULL) {
+            curr->children[c] = create_node();
+        }
+        curr = curr->children[c];
+        add_job_id(curr, job_id);
+    }
+}
+
+void insert_all_suffixes(const char* text, int job_id) {
+    char lower_text[FIELD_SIZE];
+    str_tolower(text, lower_text);
+    for (int i = 0; lower_text[i] != '\0'; i++) {
+        insert_suffix(&lower_text[i], job_id);
+    }
+}
+
+void build_suffix_tree(JobCard *jobs, int count) {
+    if (suffix_root) free_tree(suffix_root);
+    suffix_root = create_node();
+    for (int i = 0; i < count; i++) {
+        insert_all_suffixes(jobs[i].reg_no, jobs[i].id);
+        insert_all_suffixes(jobs[i].owner_name, jobs[i].id);
+        insert_all_suffixes(jobs[i].phone, jobs[i].id);
+        insert_all_suffixes(jobs[i].engine_no, jobs[i].id);
+    }
+}
+
 static void trim_newline(char *s) {
     size_t len = strlen(s);
     while (len > 0 && (s[len-1] == '\n' || s[len-1] == '\r')) {
@@ -207,6 +282,7 @@ int main(int argc, char *argv[]) {
     if (argc >= 2 && strcmp(argv[1], "daemon") == 0) {
         JobCard mem_jobs[MAX_JOBS];
         int mem_count = fh_read_all(mem_jobs, MAX_JOBS);
+        build_suffix_tree(mem_jobs, mem_count);
         char line[MAX_LINE];
         
         while (fgets(line, sizeof(line), stdin)) {
@@ -236,7 +312,7 @@ int main(int argc, char *argv[]) {
                     safe_copy(j.status, "pending", FIELD_SIZE);
                     safe_copy(j.extra, (nf >= 7 && *fields[6]) ? fields[6] : "\xE2\x80\x94", FIELD_SIZE); // Em-dash or "\xE2\x80\x94"
                     j.priority = calc_priority(j.delivery_date);
-                    if (mem_count < MAX_JOBS) { mem_jobs[mem_count++] = j; printf("Added job %d successfully.\n", j.id); } else printf("Error: limit reached.\n");
+                    if (mem_count < MAX_JOBS) { mem_jobs[mem_count++] = j; build_suffix_tree(mem_jobs, mem_count); printf("Added job %d successfully.\n", j.id); } else printf("Error: limit reached.\n");
                 } else printf("Error: invalid add args.\n");
                 fflush(stdout);
             } else if (strncmp(line, "UPDATE|", 7) == 0) {
@@ -253,7 +329,7 @@ int main(int argc, char *argv[]) {
                             found = 1; break;
                         }
                     }
-                    if (found) printf("Updated job %d successfully.\n", id); else printf("Error: id not found.\n");
+                    if (found) { build_suffix_tree(mem_jobs, mem_count); printf("Updated job %d successfully.\n", id); } else printf("Error: id not found.\n");
                 } else printf("Error: invalid update args.\n");
                 fflush(stdout);
             } else if (strcmp(line, "GET_ALL") == 0) {
@@ -261,6 +337,38 @@ int main(int argc, char *argv[]) {
                     printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", mem_jobs[i].id, mem_jobs[i].reg_no, mem_jobs[i].owner_name, mem_jobs[i].phone, mem_jobs[i].engine_no, mem_jobs[i].service_type, mem_jobs[i].delivery_date, mem_jobs[i].status, mem_jobs[i].priority, mem_jobs[i].extra);
                 }
                 printf("END_GET_ALL\n"); fflush(stdout);
+            } else if (strncmp(line, "SEARCH|", 7) == 0) {
+                char *query = line + 7;
+                char lower_query[MAX_LINE];
+                str_tolower(query, lower_query);
+
+                if (lower_query[0] != '\0') {
+                    SuffixNode* curr = suffix_root;
+                    int found = 1;
+                    for (int i = 0; lower_query[i] != '\0'; i++) {
+                        unsigned char c = (unsigned char)lower_query[i];
+                        if (curr->children[c] == NULL) {
+                            found = 0; break;
+                        }
+                        curr = curr->children[c];
+                    }
+
+                    if (found) {
+                        for (int i = 0; i < curr->job_count; i++) {
+                            int jid = curr->job_ids[i];
+                            for (int k = 0; k < mem_count; k++) {
+                                if (mem_jobs[k].id == jid) {
+                                    printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", 
+                                        mem_jobs[k].id, mem_jobs[k].reg_no, mem_jobs[k].owner_name, 
+                                        mem_jobs[k].phone, mem_jobs[k].engine_no, mem_jobs[k].service_type, 
+                                        mem_jobs[k].delivery_date, mem_jobs[k].status, mem_jobs[k].priority, mem_jobs[k].extra);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                printf("END_SEARCH\n"); fflush(stdout);
             } else { printf("Unknown command\n"); fflush(stdout); }
         }
         return 0;
