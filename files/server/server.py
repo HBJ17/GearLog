@@ -5,6 +5,9 @@ import atexit
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_cors import CORS
 import datetime as _dt
+from flask import jsonify
+from dotenv import load_dotenv
+load_dotenv("text.env")
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))          
 TMPL_DIR    = os.path.join(BASE_DIR, "..", "frontend", "templates") 
@@ -78,11 +81,34 @@ app = Flask(
 app.secret_key = "super_secret_moto_key"
 CORS(app)
 
+import os
+from dotenv import load_dotenv
+import razorpay
+# --- RAZORPAY CONFIGURATION ---
+load_dotenv() 
 
+# Get keys from environment
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 
+# Initialize client using the variables
+client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
+@app.route('/create_order', methods=['POST'])
+def create_order():
+    try:
+        # It's safer to re-verify the client here if you keep getting auth errors
+        data = { "amount": 50000, "currency": "INR", "receipt": "order_rcptid_11" }
+        order = client.order.create(data=data)
+        return jsonify(order)
+    except Exception as e:
+        print(f"RAZORPAY ERROR: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# --- UPDATED PARSE_JOBS ---
 def parse_jobs():
     today = _dt.date.today()  
-    jobs  = []
+    jobs = []
     
     ok, lines = send_command("GET_ALL")
     if not ok:
@@ -90,36 +116,73 @@ def parse_jobs():
     
     for line in lines:
         line = line.strip()
-
         if not line or line.startswith("#"):
             continue
 
         parts = line.split("|")
-
+        
+        # Ensure we have the minimum required columns
         if len(parts) < 10:
             continue
 
         try:
-            due = _dt.date.fromisoformat(parts[6]) 
+            # Clean up the delivery date string before parsing
+            date_str = parts[6].strip()
+            due = _dt.date.fromisoformat(date_str) 
             priority = (due - today).days
-        except ValueError:
-            priority = int(parts[8])  
+        except (ValueError, IndexError):
+            # Fallback to the priority column if date parsing fails
+            priority = int(parts[8].strip()) if parts[8].strip().isdigit() else 0
+
+        # FIX: Robustly check for the 11th column (Payment Status)
+        payment_status = "unpaid"
+        if len(parts) >= 11:
+            payment_status = parts[10].strip().lower() 
 
         jobs.append({
-            "id":            int(parts[0]),  # unique job number
-            "reg_no":        parts[1],       # vehicle registration number
-            "owner_name":    parts[2],       # owner's full name
-            "phone":         parts[3],       # owner's phone number
-            "engine_no":     parts[4],       # engine number
-            "service_type":  parts[5],       # oil / brake / maintenance / full
-            "delivery_date": parts[6],       # expected delivery date (YYYY-MM-DD)
-            "status":        parts[7],       # pending / in_progress / completed
-            "priority":      priority,       # live days until due (negative = overdue)
-            "extra":         parts[9],       # optional notes
+            "id":             int(parts[0]),
+            "reg_no":         parts[1].strip(),
+            "owner_name":     parts[2].strip(),
+            "phone":          parts[3].strip(),
+            "engine_no":      parts[4].strip(),
+            "service_type":   parts[5].strip(),
+            "delivery_date":  parts[6].strip(),
+            "status":         parts[7].strip(),
+            "priority":       priority,
+            "extra":          parts[9].strip(),
+            "payment_status": payment_status
         })
 
     return sorted(jobs, key=lambda j: j["priority"])
 
+@app.route('/verify_payment', methods=['POST'])
+
+def verify_payment():
+    data = request.json 
+    # Get the job_id from the request
+    target_id = data.get('job_id')
+    
+    if not target_id:
+        return jsonify({"status": "error", "message": "Missing job_id"}), 400
+
+    print(f"DEBUG: Sending UPDATE_PAYMENT command for Job {target_id} to C++ service...")
+
+    try:
+        # Send the new command to the updated service.exe daemon
+        # This will update the status in memory and call fh_write_all in C++
+        cmd = f"UPDATE_PAYMENT|{target_id}|paid"
+        success, message = send_command(cmd)
+        
+        if success:
+            print(f"SUCCESS: C++ service confirmed Job {target_id} is now paid.")
+            return jsonify({"status": "success"})
+        else:
+            print(f"ERROR: C++ service failed to update: {message}")
+            return jsonify({"status": "error", "message": message}), 500
+
+    except Exception as e:
+        print(f"SYSTEM ERROR: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/")
 def dashboard():
@@ -204,7 +267,6 @@ def list_jobs():
 @app.route("/user")
 def user_dashboard():
     return render_template("user_search.html")
-
 @app.route("/user/search", methods=["GET"])
 def user_search_results():
     query = request.args.get("query", "").strip().lower()
@@ -219,7 +281,16 @@ def user_search_results():
     active_jobs = [j for j in matching_jobs if j["status"] != "completed"]
     history_jobs = [j for j in matching_jobs if j["status"] == "completed"]
     
-    return render_template("user_view.html", query=query, active=active_jobs, history=history_jobs)
+    # Get the key from your text.env file
+    razorpay_key_id = os.getenv("RAZORPAY_KEY_ID")
+
+    return render_template(
+        "user_view.html", 
+        query=query, 
+        active=active_jobs, 
+        history=history_jobs,
+        razorpay_key=razorpay_key_id  # <--- ADD THIS LINE
+    )
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
