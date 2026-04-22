@@ -1,0 +1,20 @@
+{% extends "user_base.html" %}
+
+{% block content %}
+<div class="form-card">
+    <form action="/user/search" method="GET">
+        <div class="form-group">
+            <label for="query">Phone Number or Vehicle Number</label>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="text" name="query" id="query" placeholder="e.g. 9876543210 or KA-01-AB-1234" required
+                    autofocus>
+                <button type="submit" class="btn btn-primary">Check Status</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div style="margin-top: 2rem; text-align: center;">
+    <p class="text-muted">Enter your registered details to view your current job card and service history.</p>
+</div>
+{% endblock %}

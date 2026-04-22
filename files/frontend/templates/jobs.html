@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set active_page = 'add' if action == 'add' else 'jobs' %} {# dynamically highlights correct layout #}
+
+{% block title %}All Jobs{% endblock %}
+{% block description %}View all two-wheeler service job cards{% endblock %}
+
+{% block content %}
+
+{% if action == 'add' %}
+<div class="page-header flex-between">
+    <div>
+        <h1>New Job Card</h1>
+        <p class="text-muted">Create a new service request</p>
+    </div>
+    <a href="/jobs" class="btn btn-outline">Cancel</a>
+</div>
+<div class="form-card" style="max-width: 600px; margin: 0 auto;">
+    <form method="POST" action="/job/add" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="form-group">
+            <label>Registration Number</label>
+            <input type="text" name="reg_no" required>
+        </div>
+        <div class="form-group">
+            <label>Owner Name</label>
+            <input type="text" name="owner_name" required>
+        </div>
+        <div class="form-group">
+            <label>Phone Number</label>
+            <input type="text" name="phone" required>
+        </div>
+        <div class="form-group">
+            <label>Engine Number</label>
+            <input type="text" name="engine_no" required>
+        </div>
+        <div class="form-group">
+            <label>Service Type</label>
+            <select name="service_type" required>
+                <option value="oil">Oil Change / General Maintenance</option>
+                <option value="brake">Brake Service</option>
+                <option value="maintenance">Routine Service</option>
+                <option value="full">Full Overhaul</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Expected Delivery Date</label>
+            <input type="date" name="delivery_date" required>
+        </div>
+        <div class="form-group">
+            <label>Extra Notes</label>
+            <input type="text" name="extra" placeholder="Optional notes...">
+        </div>
+        <button type="submit" class="btn btn-primary">Create Job</button>
+    </form>
+</div>
+
+{% elif action == 'update' %}
+<div class="page-header flex-between">
+    <div>
+        <h1>Update Job J-{{ job.id }}</h1>
+        <p class="text-muted">{{ job.reg_no }} – {{ job.owner_name }}</p>
+    </div>
+    <a href="/" class="btn btn-outline">Cancel</a>
+</div>
+<div class="form-card" style="max-width: 600px; margin: 0 auto;">
+    <form method="POST" action="/job/{{ job.id }}/update" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status" required>
+                <option value="pending" {% if job.status=='pending' %}selected{% endif %}>Pending</option>
+                <option value="in_progress" {% if job.status=='in_progress' %}selected{% endif %}>In Progress</option>
+                <option value="completed" {% if job.status=='completed' %}selected{% endif %}>Completed</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Notes / Remarks</label>
+            <input type="text" name="extra" value="{{ job.extra }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Update</button>
+    </form>
+</div>
+
+{% else %}
+<div class="page-header flex-between">
+    <div>
+        <h1>All Job Cards</h1>
+        <p class="text-muted">{{ jobs|length }} job{{ 's' if jobs|length != 1 else '' }} found</p>
+    </div>
+    <a href="/job/add" class="btn btn-primary">New Job</a>
+</div>
+
+<form method="GET" action="/jobs" class="search-bar">
+
+    <input type="text" name="search" value="{{ search }}" placeholder="Search reg no, owner, engine, phone…">
+
+    <select name="status_filter">
+        <option value="">All Works</option>
+        <option value="pending" {% if status_filter=='pending' %}selected{% endif %}>Pending</option>
+        <option value="in_progress" {% if status_filter=='in_progress' %}selected{% endif %}>In Progress</option>
+        <option value="completed" {% if status_filter=='completed' %}selected{% endif %}>Completed</option>
+    </select>
+
+    <button type="submit" class="btn btn-primary">Search</button>
+
+    <a href="/jobs" class="btn btn-outline">Clear</a>
+
+</form>
+
+{% if jobs %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Job #</th>
+                <th>Reg No</th>
+                <th>Owner</th>
+                <th>Engine No</th>
+                <th>Service</th>
+                <th>Due Date</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Notes</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for j in jobs %}
+            <tr>
+                <td><strong>J-{{ j.id }}</strong></td>
+                <td><strong>{{ j.reg_no }}</strong></td>
+                <td>
+                    {{ j.owner_name }}<br>
+                    <span class="text-muted">{{ j.phone }}</span>
+                </td>
+                <td><span class="text-muted">{{ j.engine_no }}</span></td>
+                <td>{{ j.service_type | title }}</td>
+                <td>{{ j.delivery_date }}</td>
+                <td>{{ j.priority }} days</td>
+                <td>{{ j.status | replace('_', ' ') | title }}</td>
+                <td style="max-width: 160px; font-size: 0.8rem; color: var(--text-muted);">
+                    {{ j.extra if j.extra else '—' }}
+                </td>
+                <td>
+                    <a href="/job/{{ j.id }}/update" class="btn btn-outline"
+                        style="padding: 0.3rem 0.7rem; font-size: 0.78rem;">Edit</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <p>No jobs found. <a href="/jobs" style="color: var(--accent);">Clear search</a></p>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}
