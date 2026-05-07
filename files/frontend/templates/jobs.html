@@ -72,6 +72,10 @@
             </select>
         </div>
         <div class="form-group">
+            <label>Expected Delivery Date</label>
+            <input type="date" name="delivery_date" value="{{ job.delivery_date }}" required>
+        </div>
+        <div class="form-group">
             <label>Notes / Remarks</label>
             <input type="text" name="extra" value="{{ job.extra }}">
         </div>

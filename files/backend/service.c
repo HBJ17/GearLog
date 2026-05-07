@@ -21,79 +21,135 @@ typedef struct {
     char extra[FIELD_SIZE];
 } JobCard;
 
-#include <ctype.h>
+#define MAX_TREE_NODES 500000
 
-void str_tolower(const char* src, char* dest) {
-    int i = 0;
-    while(src[i]) {
-        dest[i] = tolower((unsigned char)src[i]);
-        i++;
-    }
-    dest[i] = '\0';
-}
-
-// College-level naive Suffix Trie structure
-typedef struct SuffixNode {
-    struct SuffixNode* children[256];
-    int job_ids[MAX_JOBS];
+typedef struct STNode {
+    int first_child; 
+    int next_sibling;
+    char edge_char;
+    int *job_ids;
     int job_count;
-} SuffixNode;
+    int job_cap;
+} STNode;
 
-SuffixNode* suffix_root = NULL;
+extern STNode st_nodes[MAX_TREE_NODES];
+extern int st_node_count;
+STNode st_nodes[MAX_TREE_NODES];
+int st_node_count = 1;
 
-SuffixNode* create_node() {
-    SuffixNode* node = (SuffixNode*)malloc(sizeof(SuffixNode));
-    node->job_count = 0;
-    for(int i=0; i<256; i++) node->children[i] = NULL;
-    return node;
+int st_new_node(char c) {
+    if (st_node_count >= MAX_TREE_NODES) return 0;
+    int idx = st_node_count++;
+    memset(&st_nodes[idx], 0, sizeof(STNode));
+    st_nodes[idx].edge_char = c;
+    return idx;
 }
 
-void free_tree(SuffixNode* node) {
-    if (!node) return;
-    for(int i=0; i<256; i++) {
-        if (node->children[i]) free_tree(node->children[i]);
+void st_add_job(int node_idx, int job_id) {
+    if (node_idx == 0) return;
+    STNode *n = &st_nodes[node_idx];
+    for (int i = 0; i < n->job_count; i++) {
+        if (n->job_ids[i] == job_id) return;
     }
-    free(node);
+    if (n->job_count >= n->job_cap) {
+        n->job_cap = n->job_cap == 0 ? 4 : n->job_cap * 2;
+        n->job_ids = (int*)realloc(n->job_ids, n->job_cap * sizeof(int));
+    }
+    n->job_ids[n->job_count++] = job_id;
 }
 
-void add_job_id(SuffixNode* node, int job_id) {
-    for (int i = 0; i < node->job_count; i++) {
-        if (node->job_ids[i] == job_id) return;
+int st_find_or_create_child(int node_idx, char c) {
+    int child = st_nodes[node_idx].first_child;
+    int prev = -1;
+    while(child != 0) {
+        if(st_nodes[child].edge_char == c) return child;
+        prev = child;
+        child = st_nodes[child].next_sibling;
     }
-    if (node->job_count < MAX_JOBS) {
-        node->job_ids[node->job_count++] = job_id;
+    int new_c = st_new_node(c);
+    if(prev == -1) {
+        st_nodes[node_idx].first_child = new_c;
+    } else {
+        st_nodes[prev].next_sibling = new_c;
+    }
+    return new_c;
+}
+
+void st_insert_suffix(const char *suffix, int job_id) {
+    int curr = 0; 
+    for (int i = 0; suffix[i] != '\0'; i++) {
+        unsigned char c = (unsigned char)suffix[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        curr = st_find_or_create_child(curr, c);
+        if (curr == 0) break;
+        st_add_job(curr, job_id);
     }
 }
 
-void insert_suffix(const char* text, int job_id) {
-    SuffixNode* curr = suffix_root;
-    for (int i = 0; text[i] != '\0'; i++) {
-        unsigned char c = (unsigned char)text[i];
-        if (curr->children[c] == NULL) {
-            curr->children[c] = create_node();
-        }
-        curr = curr->children[c];
-        add_job_id(curr, job_id);
+void st_insert_string(const char *str, int job_id) {
+    if (!str) return;
+    int len = strlen(str);
+    for (int i = 0; i < len; i++) {
+        st_insert_suffix(str + i, job_id);
     }
 }
 
-void insert_all_suffixes(const char* text, int job_id) {
-    char lower_text[FIELD_SIZE];
-    str_tolower(text, lower_text);
-    for (int i = 0; lower_text[i] != '\0'; i++) {
-        insert_suffix(&lower_text[i], job_id);
+void st_index_job(JobCard *j) {
+    st_insert_string(j->reg_no, j->id);
+    st_insert_string(j->owner_name, j->id);
+    st_insert_string(j->phone, j->id);
+    st_insert_string(j->engine_no, j->id);
+}
+
+typedef struct MinHeap {
+    JobCard **jobs;
+    int size;
+    int capacity;
+} MinHeap;
+
+void heap_swap(JobCard **a, JobCard **b) {
+    JobCard *t = *a;
+    *a = *b;
+    *b = t;
+}
+
+void heapify_up(MinHeap *heap, int idx) {
+    if (idx && heap->jobs[(idx - 1) / 2]->priority > heap->jobs[idx]->priority) {
+        heap_swap(&heap->jobs[idx], &heap->jobs[(idx - 1) / 2]);
+        heapify_up(heap, (idx - 1) / 2);
     }
 }
 
-void build_suffix_tree(JobCard *jobs, int count) {
-    if (suffix_root) free_tree(suffix_root);
-    suffix_root = create_node();
-    for (int i = 0; i < count; i++) {
-        insert_all_suffixes(jobs[i].reg_no, jobs[i].id);
-        insert_all_suffixes(jobs[i].owner_name, jobs[i].id);
-        insert_all_suffixes(jobs[i].phone, jobs[i].id);
-        insert_all_suffixes(jobs[i].engine_no, jobs[i].id);
+void heapify_down(MinHeap *heap, int idx) {
+    int smallest = idx;
+    int left = 2 * idx + 1;
+    int right = 2 * idx + 2;
+
+    if (left < heap->size && heap->jobs[left]->priority < heap->jobs[smallest]->priority)
+        smallest = left;
+    if (right < heap->size && heap->jobs[right]->priority < heap->jobs[smallest]->priority)
+        smallest = right;
+
+    if (smallest != idx) {
+        heap_swap(&heap->jobs[idx], &heap->jobs[smallest]);
+        heapify_down(heap, smallest);
     }
+}
+
+void heap_insert(MinHeap *heap, JobCard *job) {
+    if (heap->size == heap->capacity) return;
+    heap->jobs[heap->size] = job;
+    heapify_up(heap, heap->size);
+    heap->size++;
+}
+
+JobCard* heap_extract_min(MinHeap *heap) {
+    if (heap->size == 0) return NULL;
+    JobCard *root = heap->jobs[0];
+    heap->jobs[0] = heap->jobs[heap->size - 1];
+    heap->size--;
+    heapify_down(heap, 0);
+    return root;
 }
 
 static void trim_newline(char *s) {
@@ -254,7 +310,7 @@ int jc_add(const char *reg_no, const char *owner_name, const char *phone,
     return j.id;
 }
 
-int jc_update(int id, const char *status, const char *extra) {
+int jc_update(int id, const char *status, const char *delivery_date, const char *extra) {
     JobCard jobs[MAX_JOBS];
     int count = fh_read_all(jobs, MAX_JOBS);
     if (count == 0) return 0;
@@ -264,6 +320,8 @@ int jc_update(int id, const char *status, const char *extra) {
         if (jobs[i].id == id) {
             if (status && *status)
                 strncpy(jobs[i].status, status, FIELD_SIZE - 1);
+            if (delivery_date && *delivery_date)
+                strncpy(jobs[i].delivery_date, delivery_date, FIELD_SIZE - 1);
             if (extra && *extra)
                 strncpy(jobs[i].extra, extra, FIELD_SIZE - 1);
             jobs[i].priority = calc_priority(jobs[i].delivery_date);
@@ -282,8 +340,11 @@ int main(int argc, char *argv[]) {
     if (argc >= 2 && strcmp(argv[1], "daemon") == 0) {
         JobCard mem_jobs[MAX_JOBS];
         int mem_count = fh_read_all(mem_jobs, MAX_JOBS);
-        build_suffix_tree(mem_jobs, mem_count);
         char line[MAX_LINE];
+        
+        st_node_count = 1;
+        memset(&st_nodes[0], 0, sizeof(STNode));
+        for(int i=0; i<mem_count; i++) st_index_job(&mem_jobs[i]);
         
         while (fgets(line, sizeof(line), stdin)) {
             trim_newline(line);
@@ -312,63 +373,93 @@ int main(int argc, char *argv[]) {
                     safe_copy(j.status, "pending", FIELD_SIZE);
                     safe_copy(j.extra, (nf >= 7 && *fields[6]) ? fields[6] : "\xE2\x80\x94", FIELD_SIZE); // Em-dash or "\xE2\x80\x94"
                     j.priority = calc_priority(j.delivery_date);
-                    if (mem_count < MAX_JOBS) { mem_jobs[mem_count++] = j; build_suffix_tree(mem_jobs, mem_count); printf("Added job %d successfully.\n", j.id); } else printf("Error: limit reached.\n");
+                    if (mem_count < MAX_JOBS) { 
+                        mem_jobs[mem_count] = j; 
+                        st_index_job(&mem_jobs[mem_count]);
+                        mem_count++; 
+                        printf("Added job %d successfully.\n", j.id); 
+                    } else printf("Error: limit reached.\n");
                 } else printf("Error: invalid add args.\n");
                 fflush(stdout);
             } else if (strncmp(line, "UPDATE|", 7) == 0) {
-                char *p = line + 7; char *fields[3]; int nf = 0; fields[nf++] = p;
-                while (*p && nf < 3) { if (*p == '|') { *p = '\0'; fields[nf++] = p + 1; } p++; }
+                char *p = line + 7; char *fields[4]; int nf = 0; fields[nf++] = p;
+                while (*p && nf < 4) { if (*p == '|') { *p = '\0'; fields[nf++] = p + 1; } p++; }
                 if (nf >= 2) {
-                    int id = atoi(fields[0]); char *status = fields[1]; char *extra = (nf >= 3) ? fields[2] : "";
+                    int id = atoi(fields[0]); char *status = fields[1]; char *delivery_date = (nf >= 3) ? fields[2] : ""; char *extra = (nf >= 4) ? fields[3] : "";
                     int found = 0;
                     for (int i=0; i<mem_count; i++) {
                         if (mem_jobs[i].id == id) {
                             if (status && *status) safe_copy(mem_jobs[i].status, status, FIELD_SIZE);
+                            if (delivery_date && *delivery_date) safe_copy(mem_jobs[i].delivery_date, delivery_date, FIELD_SIZE);
                             if (extra && *extra) safe_copy(mem_jobs[i].extra, extra, FIELD_SIZE);
                             mem_jobs[i].priority = calc_priority(mem_jobs[i].delivery_date);
                             found = 1; break;
                         }
                     }
-                    if (found) { build_suffix_tree(mem_jobs, mem_count); printf("Updated job %d successfully.\n", id); } else printf("Error: id not found.\n");
+                    if (found) printf("Updated job %d successfully.\n", id); else printf("Error: id not found.\n");
                 } else printf("Error: invalid update args.\n");
                 fflush(stdout);
-            } else if (strcmp(line, "GET_ALL") == 0) {
-                for (int i=0; i<mem_count; i++) {
-                    printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", mem_jobs[i].id, mem_jobs[i].reg_no, mem_jobs[i].owner_name, mem_jobs[i].phone, mem_jobs[i].engine_no, mem_jobs[i].service_type, mem_jobs[i].delivery_date, mem_jobs[i].status, mem_jobs[i].priority, mem_jobs[i].extra);
-                }
-                printf("END_GET_ALL\n"); fflush(stdout);
             } else if (strncmp(line, "SEARCH|", 7) == 0) {
                 char *query = line + 7;
-                char lower_query[MAX_LINE];
-                str_tolower(query, lower_query);
-
-                if (lower_query[0] != '\0') {
-                    SuffixNode* curr = suffix_root;
-                    int found = 1;
-                    for (int i = 0; lower_query[i] != '\0'; i++) {
-                        unsigned char c = (unsigned char)lower_query[i];
-                        if (curr->children[c] == NULL) {
-                            found = 0; break;
+                int curr = 0;
+                int matched = 1;
+                for(int i=0; query[i] != '\0'; i++) {
+                    unsigned char c = (unsigned char)query[i];
+                    if (c >= 'A' && c <= 'Z') c += 32;
+                    int child = st_nodes[curr].first_child;
+                    int found = 0;
+                    while(child != 0) {
+                        if(st_nodes[child].edge_char == c) {
+                            curr = child;
+                            found = 1;
+                            break;
                         }
-                        curr = curr->children[c];
+                        child = st_nodes[child].next_sibling;
                     }
+                    if(!found) {
+                        matched = 0; break;
+                    }
+                }
+                if (matched && curr != 0) {
+                    STNode *n = &st_nodes[curr];
+                    MinHeap heap;
+                    heap.capacity = n->job_count;
+                    heap.size = 0;
+                    heap.jobs = malloc(sizeof(JobCard*) * heap.capacity);
 
-                    if (found) {
-                        for (int i = 0; i < curr->job_count; i++) {
-                            int jid = curr->job_ids[i];
-                            for (int k = 0; k < mem_count; k++) {
-                                if (mem_jobs[k].id == jid) {
-                                    printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", 
-                                        mem_jobs[k].id, mem_jobs[k].reg_no, mem_jobs[k].owner_name, 
-                                        mem_jobs[k].phone, mem_jobs[k].engine_no, mem_jobs[k].service_type, 
-                                        mem_jobs[k].delivery_date, mem_jobs[k].status, mem_jobs[k].priority, mem_jobs[k].extra);
-                                    break;
-                                }
+                    for (int i = 0; i < n->job_count; i++) {
+                        int j_id = n->job_ids[i];
+                        for(int k=0; k < mem_count; k++) {
+                            if (mem_jobs[k].id == j_id) {
+                                heap_insert(&heap, &mem_jobs[k]);
+                                break;
                             }
                         }
                     }
+                    while(heap.size > 0) {
+                        JobCard *min_job = heap_extract_min(&heap);
+                        printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", min_job->id, min_job->reg_no, min_job->owner_name, min_job->phone, min_job->engine_no, min_job->service_type, min_job->delivery_date, min_job->status, min_job->priority, min_job->extra);
+                    }
+                    free(heap.jobs);
                 }
                 printf("END_SEARCH\n"); fflush(stdout);
+            } else if (strcmp(line, "GET_ALL") == 0) {
+                MinHeap heap;
+                heap.capacity = mem_count > 0 ? mem_count : 1;
+                heap.size = 0;
+                heap.jobs = malloc(sizeof(JobCard*) * heap.capacity);
+
+                for (int i=0; i<mem_count; i++) {
+                    heap_insert(&heap, &mem_jobs[i]);
+                }
+                
+                while(heap.size > 0) {
+                    JobCard *min_job = heap_extract_min(&heap);
+                    printf("%d|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", min_job->id, min_job->reg_no, min_job->owner_name, min_job->phone, min_job->engine_no, min_job->service_type, min_job->delivery_date, min_job->status, min_job->priority, min_job->extra);
+                }
+                free(heap.jobs);
+                
+                printf("END_GET_ALL\n"); fflush(stdout);
             } else { printf("Unknown command\n"); fflush(stdout); }
         }
         return 0;
@@ -410,9 +501,10 @@ int main(int argc, char *argv[]) {
         }
         int id = atoi(argv[2]);
         const char *status = argv[3];
-        const char *extra = (argc >= 5) ? argv[4] : "";
+        const char *delivery_date = (argc >= 5) ? argv[4] : "";
+        const char *extra = (argc >= 6) ? argv[5] : "";
         
-        if (jc_update(id, status, extra)) {
+        if (jc_update(id, status, delivery_date, extra)) {
             printf("Updated job %d successfully.\n", id);
             return 0;
         } else {
