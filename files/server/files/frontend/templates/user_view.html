@@ -1,0 +1,278 @@
+{% extends "user_base.html" %}
+
+{% block head %}
+<style>
+    .job-detail-card {
+        background: var(--bg-white);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+
+    .job-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .detail-item label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+    }
+
+    .detail-item span {
+        font-weight: 600;
+        font-size: 1rem;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+        margin: 2rem 0;
+        padding: 0 1rem;
+    }
+
+    .progress-bar-wrap {
+        display: flex;
+        justify-content: space-between;
+        position: relative;
+        margin-bottom: 1rem;
+    }
+
+    .progress-bar-wrap::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        height: 2px;
+        width: 100%;
+        background: #e2e8f0;
+        z-index: 1;
+        transform: translateY(-50%);
+    }
+
+    .progress-line-fill {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        height: 2px;
+        background: var(--accent);
+        z-index: 2;
+        transform: translateY(-50%);
+        transition: width 0.3s ease;
+    }
+
+    .step {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid #e2e8f0;
+        z-index: 3;
+        position: relative;
+    }
+
+    .step.active {
+        border-color: var(--accent);
+        background: var(--accent);
+    }
+
+    .step.current {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .step-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .step-labels div.active {
+        color: var(--accent);
+    }
+
+    .payment-section {
+        display: flex;
+        justify-content: center;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px dashed var(--border);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between;">
+    <div>
+        <h2 style="font-size: 1.25rem; font-weight: 700;">Service Tracking for "{{ query }}"</h2>
+    </div>
+    <a href="/user" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">New Search</a>
+</div>
+
+{% if not active and not history %}
+<div class="empty-state">
+    <p>No job cards found for this query.</p>
+    <p class="text-muted" style="margin-top: 1rem;">Please double check the details or contact the service center.</p>
+</div>
+{% else %}
+
+    {% for job in active + history %}
+    <div class="job-detail-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+            <div>
+                <span class="text-muted">Job ID</span>
+                <h3 style="font-size: 1.5rem; font-weight: 800;">J-{{ job.id }}</h3>
+            </div>
+            <div style="text-align: right;">
+                <span class="text-muted">Status</span>
+                <div>
+                    {% if job.status == 'completed' %}
+                    <span style="color: var(--green); font-weight: 700;">COMPLETED</span>
+                    {% elif job.status == 'in_progress' %}
+                    <span style="color: var(--accent); font-weight: 700;">IN PROGRESS</span>
+                    {% else %}
+                    <span style="color: var(--orange); font-weight: 700;">PENDING</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="job-grid">
+            <div class="detail-item">
+                <label>Vehicle Number</label>
+                <span>{{ job.reg_no }}</span>
+            </div>
+            <div class="detail-item">
+                <label>Owner Name</label>
+                <span>{{ job.owner_name }}</span>
+            </div>
+            <div class="detail-item">
+                <label>Service Type</label>
+                <span style="text-transform: capitalize;">{{ job.service_type }}</span>
+            </div>
+            <div class="detail-item">
+                <label>Delivery Date</label>
+                <span>{{ job.delivery_date }}</span>
+            </div>
+            <div class="detail-item">
+                <label>Engine Number</label>
+                <span>{{ job.engine_no }}</span>
+            </div>
+            <div class="detail-item">
+                <label>Contact</label>
+                <span>{{ job.phone }}</span>
+            </div>
+        </div>
+
+        {% if job.extra %}
+        <div style="margin-bottom: 2rem;">
+            <label style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Service Notes</label>
+            <p style="font-size: 0.9rem; margin-top: 0.25rem;">{{ job.extra }}</p>
+        </div>
+        {% endif %}
+
+        <div class="progress-container">
+            <div class="progress-bar-wrap">
+                {% set fill = '0%' %}
+                {% if job.status == 'in_progress' %} {% set fill = '50%' %}
+                {% elif job.status == 'completed' %} {% set fill = '100%' %}
+                {% endif %}
+                <div class="progress-line-fill" style="width: {{ fill }};"></div>
+
+                <div class="step active {{ 'current' if job.status == 'pending' }}"></div>
+                <div class="step {{ 'active' if job.status in ['in_progress', 'completed'] }} {{ 'current' if job.status == 'in_progress' }}"></div>
+                <div class="step {{ 'active' if job.status == 'completed' }} {{ 'current' if job.status == 'completed' }}"></div>
+            </div>
+            <div class="step-labels">
+                <div class="active">PENDING</div>
+                <div class="{{ 'active' if job.status in ['in_progress', 'completed'] }}">IN PROGRESS</div>
+                <div class="{{ 'active' if job.status == 'completed' }}">COMPLETED</div>
+            </div>
+        </div>
+
+        <div class="payment-section">
+            {% if job.payment_status|lower == 'paid' %}
+                <button class="btn" style="width: 100%; padding: 0.8rem; background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: default;" disabled>
+                    ✓ PAID
+                </button>
+            {% else %}
+                <button id="pay-button-{{ job.id }}" 
+                        class="btn btn-primary" 
+                        onclick="initiateRazorpay('{{ job.id }}', '{{ job.owner_name }}', '{{ job.phone }}')"
+                        style="width: 100%; padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">
+                    PAY NOW
+                </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+{% endif %}
+
+<div style="margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 1.5rem; text-align: center;">
+    <p class="text-muted">Thank you for choosing MotoService!</p>
+</div>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+function initiateRazorpay(jobId, ownerName, phone) {
+    // This variable MUST be passed from your backend render_template
+    const rzpKey = "{{ razorpay_key }}"; 
+    
+    if (!rzpKey || rzpKey.includes("YOUR_")) {
+        alert("Developer Error: Razorpay Key is missing from the .env or not passed from backend.");
+        return;
+    }
+
+    const options = {
+        "key": rzpKey,
+        "amount": "50000", // 500 INR in paise
+        "currency": "INR",
+        "name": "MotoService Center",
+        "description": "Payment for Job #" + jobId,
+        "handler": function (response) {
+            // This runs after successful payment
+            fetch('/verify_payment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    job_id: jobId,
+                    razorpay_id: response.razorpay_payment_id 
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert("Payment Verified! Updating your status.");
+                    window.location.reload();
+                } else {
+                    alert("Verification error: " + data.message);
+                }
+            })
+            .catch(err => console.error("Communication error:", err));
+        },
+        "prefill": {
+            "name": ownerName,
+            "contact": phone
+        },
+        "theme": { "color": "#007bff" }
+    };
+
+    const rzp1 = new Razorpay(options);
+    
+    rzp1.on('payment.failed', function (response){
+        alert("Payment Failed: " + response.error.description);
+    });
+
+    rzp1.open();
+}
+</script>
+{% endblock %}

@@ -7,10 +7,7 @@ from flask_cors import CORS
 import datetime as _dt
 from flask import jsonify
 from dotenv import load_dotenv
-import razorpay
-
-# --- LOAD ENVIRONMENT VARIABLES ---
-load_dotenv(".env")  # Fixed: was "text.env"
+load_dotenv("text.env")
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))          
 TMPL_DIR    = os.path.join(BASE_DIR, "..", "frontend", "templates") 
@@ -35,7 +32,6 @@ def init_backend():
             cwd=BACKEND_DIR       
         )
     except FileNotFoundError:
-        print("WARNING: Backend service not found. Running in demo mode.")
         pass
 
 def close_backend():
@@ -57,17 +53,15 @@ def send_command(cmd_str):
         init_backend()
         
     with backend_lock:
-        if not backend_proc: 
-            return False, "Backend not running"
+        if not backend_proc: return False, "Backend not running"
         try:
             backend_proc.stdin.write(cmd_str + "\n")
             backend_proc.stdin.flush()
-            if cmd_str == "GET_ALL" or cmd_str.startswith("SEARCH|"):
+            if cmd_str == "GET_ALL":
                 lines = []
-                end_marker = "END_GET_ALL" if cmd_str == "GET_ALL" else "END_SEARCH"
                 while True:
                     line = backend_proc.stdout.readline()
-                    if not line or line.strip() == end_marker:
+                    if not line or line.strip() == "END_GET_ALL":
                         break
                     lines.append(line)
                 return True, lines
@@ -76,6 +70,7 @@ def send_command(cmd_str):
                 return "successfully" in out.lower(), out
         except Exception as e:
             return False, str(e)
+
 
 app = Flask(
     __name__,
@@ -86,40 +81,36 @@ app = Flask(
 app.secret_key = "super_secret_moto_key"
 CORS(app)
 
+import os
+from dotenv import load_dotenv
+import razorpay
 # --- RAZORPAY CONFIGURATION ---
+load_dotenv() 
+
+# Get keys from environment
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 
-# Initialize Razorpay client only if credentials exist
-if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
-    client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-else:
-    client = None
-    print("WARNING: Razorpay credentials not found in .env file")
+# Initialize client using the variables
+client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 @app.route('/create_order', methods=['POST'])
 def create_order():
-    if not client:
-        return jsonify({"error": "Razorpay not configured"}), 500
-    
     try:
-        data = { 
-            "amount": 50000,        # 500 INR in paise
-            "currency": "INR", 
-            "receipt": "order_rcptid_11" 
-        }
+        # It's safer to re-verify the client here if you keep getting auth errors
+        data = { "amount": 50000, "currency": "INR", "receipt": "order_rcptid_11" }
         order = client.order.create(data=data)
         return jsonify(order)
     except Exception as e:
         print(f"RAZORPAY ERROR: {e}")
         return jsonify({"error": str(e)}), 500
 
-# --- PARSE_JOBS ---
-def parse_jobs(cmd="GET_ALL"):
+# --- UPDATED PARSE_JOBS ---
+def parse_jobs():
     today = _dt.date.today()  
     jobs = []
     
-    ok, lines = send_command(cmd)
+    ok, lines = send_command("GET_ALL")
     if not ok:
         return []
     
@@ -143,7 +134,7 @@ def parse_jobs(cmd="GET_ALL"):
             # Fallback to the priority column if date parsing fails
             priority = int(parts[8].strip()) if parts[8].strip().isdigit() else 0
 
-        # Get payment status from 11th column
+        # FIX: Robustly check for the 11th column (Payment Status)
         payment_status = "unpaid"
         if len(parts) >= 11:
             payment_status = parts[10].strip().lower() 
@@ -165,48 +156,40 @@ def parse_jobs(cmd="GET_ALL"):
     return sorted(jobs, key=lambda j: j["priority"])
 
 @app.route('/verify_payment', methods=['POST'])
-def verify_payment():
-    """Verify Razorpay payment and update payment status"""
-    if not client:
-        return jsonify({"status": "error", "message": "Razorpay not configured"}), 500
-    
-    data = request.json 
-    target_id = data.get('job_id')
-    razorpay_payment_id = data.get('razorpay_id')
-    
-    if not target_id or not razorpay_payment_id:
-        return jsonify({"status": "error", "message": "Missing job_id or razorpay_id"}), 400
 
-    print(f"DEBUG: Verifying payment {razorpay_payment_id} for Job {target_id}")
+def verify_payment():
+    data = request.json 
+    # Get the job_id from the request
+    target_id = data.get('job_id')
+    
+    if not target_id:
+        return jsonify({"status": "error", "message": "Missing job_id"}), 400
+
+    print(f"DEBUG: Sending UPDATE_PAYMENT command for Job {target_id} to C++ service...")
 
     try:
-        # Fetch payment details from Razorpay to verify
-        payment = client.payment.fetch(razorpay_payment_id)
+        # Send the new command to the updated service.exe daemon
+        # This will update the status in memory and call fh_write_all in C++
+        cmd = f"UPDATE_PAYMENT|{target_id}|paid"
+        success, message = send_command(cmd)
         
-        if payment['status'] == 'captured':
-            # Payment successful, update in backend
-            cmd = f"UPDATE_PAYMENT|{target_id}|paid"
-            success, message = send_command(cmd)
-            
-            if success:
-                print(f"SUCCESS: Job {target_id} payment verified and marked as paid")
-                return jsonify({"status": "success"})
-            else:
-                print(f"ERROR: Failed to update payment status: {message}")
-                return jsonify({"status": "error", "message": "Failed to update payment status"}), 500
+        if success:
+            print(f"SUCCESS: C++ service confirmed Job {target_id} is now paid.")
+            return jsonify({"status": "success"})
         else:
-            return jsonify({"status": "error", "message": f"Payment status is {payment['status']}, not captured"}), 400
+            print(f"ERROR: C++ service failed to update: {message}")
+            return jsonify({"status": "error", "message": message}), 500
 
     except Exception as e:
-        print(f"PAYMENT VERIFICATION ERROR: {e}")
+        print(f"SYSTEM ERROR: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/")
 def dashboard():
-    """Admin dashboard - shows all jobs"""
     jobs = parse_jobs()  
 
     active = [j for j in jobs if j["status"] != "completed"]
+
     history = [j for j in jobs if j["status"] == "completed"]
 
     stats = {
@@ -214,14 +197,13 @@ def dashboard():
         "pending":     sum(1 for j in jobs if j["status"] == "pending"),
         "in_progress": sum(1 for j in jobs if j["status"] == "in_progress"),
         "completed":   sum(1 for j in jobs if j["status"] == "completed"),
-        "overdue":     sum(1 for j in jobs if j["priority"] <= 0 and j["status"] != "completed"),
+        "overdue":     sum(1 for j in jobs if j["priority"] == 0 and j["status"] != "completed"),
     }
 
     return render_template("index.html", stats=stats, active=active, history=history)
 
 @app.route("/job/add", methods=["GET", "POST"])
 def add_job():
-    """Add a new job card"""
     if request.method == "POST":
         reg_no = request.form.get("reg_no", "").strip()
         owner = request.form.get("owner_name", "").strip()
@@ -231,31 +213,19 @@ def add_job():
         delivery = request.form.get("delivery_date", "").strip()
         extra = request.form.get("extra", "").strip()
         
-        if not all([reg_no, owner, phone, engine, service, delivery]):
-            flash("All fields are required!", "error")
-            return redirect(url_for("add_job"))
-        
-        # Sanitize to prevent pipe character issues
-        reg_no = reg_no.replace("|", "")
-        owner = owner.replace("|", "")
-        phone = phone.replace("|", "")
-        engine = engine.replace("|", "")
-        service = service.replace("|", "")
-        extra = extra.replace("|", "")
-        
-        cmd = f"ADD|{reg_no}|{owner}|{phone}|{engine}|{service}|{delivery}|pending|0|{extra}|unpaid"
+        cmd = f"ADD|{reg_no}|{owner}|{phone}|{engine}|{service}|{delivery}|{extra}"
         ok, msg = send_command(cmd)
         if ok:
             flash("Job added successfully!", "success")
             return redirect(url_for("dashboard"))
         else:
             flash(f"Error adding job: {msg}", "error")
+            return redirect(url_for("add_job"))
             
     return render_template("jobs.html", action="add")
 
 @app.route("/job/<int:job_id>/update", methods=["GET", "POST"])
 def update_job(job_id):
-    """Update existing job"""
     jobs = parse_jobs()
     job = next((j for j in jobs if j["id"] == job_id), None)
     if not job:
@@ -265,9 +235,6 @@ def update_job(job_id):
     if request.method == "POST":
         status = request.form.get("status", "").strip()
         extra = request.form.get("extra", "").strip()
-        
-        # Sanitize pipe characters
-        extra = extra.replace("|", "")
         
         cmd = f"UPDATE|{job_id}|{status}|{extra}"
         ok, msg = send_command(cmd)
@@ -279,16 +246,18 @@ def update_job(job_id):
             
     return render_template("jobs.html", action="update", job=job)
 
+    
 @app.route("/jobs")
 def list_jobs():
-    """List jobs with optional search and filter"""
+    jobs   = parse_jobs()
     search = request.args.get("search", "").strip().lower()
     status_filter = request.args.get("status_filter", "").strip().lower()
 
     if search:
-        jobs = parse_jobs(f"SEARCH|{search}")
-    else:
-        jobs = parse_jobs()
+        jobs = [j for j in jobs if any(
+            search in j[field].lower()
+            for field in ("reg_no", "owner_name", "engine_no", "phone")
+        )]
 
     if status_filter:
         jobs = [j for j in jobs if j["status"].lower() == status_filter]
@@ -297,23 +266,22 @@ def list_jobs():
 
 @app.route("/user")
 def user_dashboard():
-    """User search page"""
     return render_template("user_search.html")
-
 @app.route("/user/search", methods=["GET"])
 def user_search_results():
-    """Display user's job cards and payment status"""
     query = request.args.get("query", "").strip().lower()
     if not query:
         return redirect(url_for("user_dashboard"))
 
-    # Use the C backend Suffix Tree for substring searches
-    matching_jobs = parse_jobs(f"SEARCH|{query}")
+    jobs = parse_jobs()
+    
+    # Filter jobs matching phone or reg_no partially
+    matching_jobs = [j for j in jobs if query in j["phone"].lower() or query in j["reg_no"].lower()]
     
     active_jobs = [j for j in matching_jobs if j["status"] != "completed"]
     history_jobs = [j for j in matching_jobs if j["status"] == "completed"]
     
-    # Get Razorpay key for frontend
+    # Get the key from your text.env file
     razorpay_key_id = os.getenv("RAZORPAY_KEY_ID")
 
     return render_template(
@@ -321,7 +289,7 @@ def user_search_results():
         query=query, 
         active=active_jobs, 
         history=history_jobs,
-        razorpay_key=razorpay_key_id
+        razorpay_key=razorpay_key_id  # <--- ADD THIS LINE
     )
 
 if __name__ == "__main__":
